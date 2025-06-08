@@ -118,7 +118,13 @@ function proceedToInstructions() {
     if (testCandidateId) testCandidateId.textContent = loginId;
     
     const candidateName = document.getElementById('candidateName');
-    if (candidateName) candidateName.textContent = 'Test Candidate';
+    if (candidateName) candidateName.textContent = loginId;
+    
+    const welcomeCandidateName = document.getElementById('welcomeCandidateName');
+    if (welcomeCandidateName) welcomeCandidateName.textContent = loginId;
+    
+    const testCandidateName = document.getElementById('testCandidateName');
+    if (testCandidateName) testCandidateName.textContent = loginId;
     
     showScreen('instructionsScreen');
 }
