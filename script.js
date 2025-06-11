@@ -37,15 +37,19 @@ let testState = {
     answers: {},
     sectionStartTime: null,
     timer: null,
-    warningCount: 0,
+    violationCount: 0,
+    maxViolations: 2, // User gets 2 chances, locked on 3rd violation
     loginId: "",
     isTestLocked: false,
-    isTestCompleted: false
+    isTestCompleted: false,
+    isLaptop: false,
+    testStarted: false
 };
 
 // Initialize test when page loads
 document.addEventListener('DOMContentLoaded', function() {
     try {
+        detectDevice();
         initializeTest();
         setupSecurityMonitoring();
         setupCheckboxListener();
@@ -85,6 +89,59 @@ function initializeTest() {
     });
     
     showScreen('loginScreen');
+}
+
+function detectDevice() {
+    // More robust mobile device detection
+    const userAgent = navigator.userAgent.toLowerCase();
+    
+    // Check for specific mobile indicators
+    const mobileIndicators = [
+        /android/i,
+        /webos/i,
+        /iphone/i,
+        /ipad/i,
+        /ipod/i,
+        /blackberry/i,
+        /iemobile/i,
+        /opera mini/i,
+        /mobile/i,
+        /tablet/i
+    ];
+    
+    const isMobileUA = mobileIndicators.some(regex => regex.test(userAgent));
+    
+    // Check screen dimensions (mobile devices typically have narrower screens)
+    const screenWidth = window.screen.availWidth;
+    const screenHeight = window.screen.availHeight;
+    const isSmallScreen = screenWidth < 768 || screenHeight < 600;
+    
+    // Check for touch capability (most mobile devices are touch-primary)
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    
+    // Check for orientation API (mobile devices support this)
+    const hasOrientationAPI = 'orientation' in window;
+    
+    // More sophisticated laptop/desktop detection
+    // A device is considered laptop/desktop if:
+    // 1. Not detected as mobile by user agent
+    // 2. Has reasonable screen size
+    // 3. Either not touch-primary OR has large screen despite touch
+    testState.isLaptop = !isMobileUA && 
+                        !isSmallScreen && 
+                        (!isTouchDevice || screenWidth >= 1024) &&
+                        !/android|ios/i.test(userAgent);
+    
+    console.log('Enhanced Device Detection:', {
+        isLaptop: testState.isLaptop,
+        isMobileUA: isMobileUA,
+        isSmallScreen: isSmallScreen,
+        isTouchDevice: isTouchDevice,
+        hasOrientationAPI: hasOrientationAPI,
+        screenWidth: screenWidth,
+        screenHeight: screenHeight,
+        userAgent: userAgent.substring(0, 50) + '...'
+    });
 }
 
 function shuffleArray(array) {
@@ -135,6 +192,11 @@ function startTest() {
         alert('Please check the agreement checkbox to proceed');
         return;
     }
+    
+    // Mark test as started to enable cheat detection
+    testState.testStarted = true;
+    
+    // Violation tracking will be silent - no UI updates needed
     
     // Start first section
     startSection(0);
@@ -475,10 +537,13 @@ function restartTest() {
         answers: {},
         sectionStartTime: null,
         timer: null,
-        warningCount: 0,
+        violationCount: 0,
+        maxViolations: 2,
         loginId: "",
         isTestLocked: false,
-        isTestCompleted: false
+        isTestCompleted: false,
+        isLaptop: false,
+        testStarted: false
     };
     
     // Clear inputs
@@ -487,31 +552,39 @@ function restartTest() {
     document.getElementById('reloginId').value = '';
     document.getElementById('reloginPassword').value = '';
     
-    // Update warning counter display
-    document.getElementById('warningCount').textContent = '0';
-    
     clearInterval(testState.timer);
+    
+    // Re-detect device and reinitialize
+    detectDevice();
     initializeTest();
 }
 
 // Security Monitoring
 function setupSecurityMonitoring() {
-    // Disable right-click context menu
+    // Enhanced right-click detection for laptops during test
     document.addEventListener('contextmenu', function(e) {
-        if (!testState.isTestCompleted && !testState.isTestLocked) {
+        if (shouldTriggerCheatDetection()) {
             e.preventDefault();
-            handleSecurityViolation('Right-click detected');
+            handleCheatViolation('Right-click detected during test');
         }
     });
     
-    // Monitor keyboard usage (except during login)
+    // Enhanced keyboard monitoring for laptops during test
     document.addEventListener('keydown', function(e) {
         // Allow keyboard usage only on login screens and input fields
         const activeScreen = document.querySelector('.screen.active');
         const isLoginScreen = activeScreen && activeScreen.id === 'loginScreen';
-        const isReloginModal = document.getElementById('reloginModal').classList.contains('active');
+        const isReloginModal = document.getElementById('reloginModal') && 
+                             document.getElementById('reloginModal').classList.contains('active');
         const isInputFocused = document.activeElement.tagName === 'INPUT';
         
+        // Enhanced cheat detection for laptops during test
+        if (shouldTriggerCheatDetection() && !isLoginScreen && !isReloginModal && !isInputFocused) {
+            handleCheatViolation('Keyboard usage detected during test');
+            return;
+        }
+        
+        // Legacy security for non-laptop devices
         if (!isLoginScreen && !isReloginModal && !isInputFocused && !testState.isTestCompleted && !testState.isTestLocked) {
             handleSecurityViolation('Keyboard usage detected');
         }
@@ -525,17 +598,55 @@ function setupSecurityMonitoring() {
     });
 }
 
-function handleSecurityViolation(reason) {
-    testState.warningCount++;
-    document.getElementById('warningCount').textContent = testState.warningCount;
+// Check if cheat detection should be triggered (laptop + test started)
+function shouldTriggerCheatDetection() {
+    return testState.isLaptop && 
+           testState.testStarted && 
+           !testState.isTestCompleted && 
+           !testState.isTestLocked;
+}
+
+// Enhanced cheat detection handler for laptops during test
+function handleCheatViolation(reason) {
+    testState.violationCount++;
+    console.log(`Cheat violation detected: ${reason}. Count: ${testState.violationCount}/${testState.maxViolations + 1}`);
     
-    if (testState.warningCount >= 3) {
+    // Violation recorded silently - no UI update needed
+    
+    if (testState.violationCount > testState.maxViolations) {
+        // Permanent lock on 3rd violation
+        lockTestPermanently(reason);
+    } else {
+        // Show warning and require re-login for 1st and 2nd violations
+        showCheatWarningAndRequireRelogin(reason);
+    }
+}
+
+// Legacy security violation handler for other cases
+function handleSecurityViolation(reason) {
+    testState.violationCount++;
+    
+    if (testState.violationCount >= 3) {
         lockTest();
     } else {
         showWarningAndRequireRelogin(reason);
     }
 }
 
+// Enhanced warning for cheat detection on laptops
+function showCheatWarningAndRequireRelogin(reason) {
+    // Pause timer
+    clearInterval(testState.timer);
+    
+    const remainingChances = testState.maxViolations - testState.violationCount + 1;
+    const warningMessage = `VIOLATION DETECTED: ${reason}\n\nYou have ${remainingChances} chance(s) remaining. If you violate the test rules again, your test will be PERMANENTLY LOCKED.\n\nPlease use only left mouse clicks during the test. No keyboard or right-click usage is allowed.`;
+    
+    // Show warning
+    document.getElementById('warningMessage').textContent = warningMessage;
+    showModal('warningModal');
+}
+
+// Legacy warning function
 function showWarningAndRequireRelogin(reason) {
     // Pause timer
     clearInterval(testState.timer);
@@ -575,6 +686,43 @@ function continueTest() {
     startTimer();
 }
 
+// Permanent lock for cheat violations
+function lockTestPermanently(reason) {
+    testState.isTestLocked = true;
+    clearInterval(testState.timer);
+    
+    // Update the locked screen message for permanent violations
+    const lockedContainer = document.querySelector('#lockedScreen .locked-container');
+    if (lockedContainer) {
+        const titleElement = lockedContainer.querySelector('h2');
+        const messageElements = lockedContainer.querySelectorAll('p');
+        
+        if (titleElement) titleElement.textContent = 'Test Permanently Locked';
+        if (messageElements.length >= 2) {
+            messageElements[0].textContent = `Final violation detected: ${reason}`;
+            messageElements[1].textContent = 'You have exceeded the maximum number of violations (3) allowed during the test. Your test session has been permanently locked.';
+            
+            // Add Roman Urdu message
+            const romanUrduMessage = document.createElement('p');
+            romanUrduMessage.style.fontStyle = 'italic';
+            romanUrduMessage.style.marginTop = '20px';
+            romanUrduMessage.style.color = '#dc3545';
+            romanUrduMessage.style.fontWeight = 'bold';
+            romanUrduMessage.textContent = 'mana b kia tha k ye harkat ni krni, ab test wale din aisi harkat na krna wrna fast ka dream chapak hojyega';
+            
+            // Insert after the second message
+            if (messageElements[1].nextSibling) {
+                lockedContainer.insertBefore(romanUrduMessage, messageElements[1].nextSibling);
+            } else {
+                messageElements[1].parentNode.insertBefore(romanUrduMessage, messageElements[1].nextSibling);
+            }
+        }
+    }
+    
+    showScreen('lockedScreen');
+}
+
+// Legacy lock function
 function lockTest() {
     testState.isTestLocked = true;
     clearInterval(testState.timer);
