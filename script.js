@@ -40,10 +40,13 @@ let testState = {
     violationCount: 0,
     maxViolations: 2, // User gets 2 chances, locked on 3rd violation
     loginId: "",
+
     isTestLocked: false,
     isTestCompleted: false,
     isLaptop: false,
-    testStarted: false
+    testStarted: false,
+    lastUserActivity: Date.now(), // Track user activity to prevent false blur triggers
+    userActivityEvents: ['click', 'touchstart', 'keydown', 'mousemove'] // Events that indicate user activity
 };
 
 // Initialize test when page loads
@@ -52,6 +55,7 @@ document.addEventListener('DOMContentLoaded', function() {
         detectDevice();
         initializeTest();
         setupSecurityMonitoring();
+        setupUserActivityTracking();
         setupCheckboxListener();
         console.log('✅ FAST Mock Test initialized successfully');
     } catch (error) {
@@ -59,6 +63,15 @@ document.addEventListener('DOMContentLoaded', function() {
         alert('Error loading test. Please refresh the page.');
     }
 });
+
+function setupUserActivityTracking() {
+    // Track user activity to help determine if blur events are legitimate
+    testState.userActivityEvents.forEach(eventType => {
+        document.addEventListener(eventType, function() {
+            testState.lastUserActivity = Date.now();
+        }, { passive: true });
+    });
+}
 
 function setupCheckboxListener() {
     const checkbox = document.getElementById('agreementCheckbox');
@@ -122,15 +135,29 @@ function detectDevice() {
     // Check for orientation API (mobile devices support this)
     const hasOrientationAPI = 'orientation' in window;
     
-    // More sophisticated laptop/desktop detection
+    // Check if device has a physical keyboard (indicates laptop/desktop)
+    const hasPhysicalKeyboard = !isTouchDevice || (screenWidth >= 1024 && screenHeight >= 768);
+    
+    // More sophisticated laptop/desktop detection with better logic
     // A device is considered laptop/desktop if:
-    // 1. Not detected as mobile by user agent
-    // 2. Has reasonable screen size
-    // 3. Either not touch-primary OR has large screen despite touch
-    testState.isLaptop = !isMobileUA && 
-                        !isSmallScreen && 
-                        (!isTouchDevice || screenWidth >= 1024) &&
-                        !/android|ios/i.test(userAgent);
+    // 1. Not detected as mobile by user agent AND
+    // 2. Has reasonable screen size (width >= 1024 OR height >= 768) AND
+    // 3. Either not touch-primary OR has large screen despite touch (hybrid devices)
+    const isLikelyLaptop = !isMobileUA && 
+                          (screenWidth >= 1024 || screenHeight >= 768) && 
+                          !hasOrientationAPI && // Mobile devices usually have orientation API
+                          !/android|ios|mobile|tablet/i.test(userAgent);
+    
+    // Additional check: if it's a hybrid device (touch + large screen), treat as laptop
+    const isHybridDevice = isTouchDevice && screenWidth >= 1024 && screenHeight >= 768 && !isMobileUA;
+    
+    // Final determination - be conservative to avoid false positives
+    testState.isLaptop = isLikelyLaptop || isHybridDevice;
+    
+    // Override for known problematic cases
+    if (/ipad|tablet/i.test(userAgent) && screenWidth < 1366) {
+        testState.isLaptop = false; // Force tablets to be treated as mobile
+    }
     
     console.log('Enhanced Device Detection:', {
         isLaptop: testState.isLaptop,
@@ -138,6 +165,9 @@ function detectDevice() {
         isSmallScreen: isSmallScreen,
         isTouchDevice: isTouchDevice,
         hasOrientationAPI: hasOrientationAPI,
+        hasPhysicalKeyboard: hasPhysicalKeyboard,
+        isLikelyLaptop: isLikelyLaptop,
+        isHybridDevice: isHybridDevice,
         screenWidth: screenWidth,
         screenHeight: screenHeight,
         userAgent: userAgent.substring(0, 50) + '...'
@@ -543,7 +573,9 @@ function restartTest() {
         isTestLocked: false,
         isTestCompleted: false,
         isLaptop: false,
-        testStarted: false
+        testStarted: false,
+        lastUserActivity: Date.now(), // Track user activity to prevent false blur triggers
+        userActivityEvents: ['click', 'touchstart', 'keydown', 'mousemove'] // Events that indicate user activity
     };
     
     // Clear inputs
@@ -574,40 +606,118 @@ function setupSecurityMonitoring() {
         // Allow keyboard usage only on login screens and input fields
         const activeScreen = document.querySelector('.screen.active');
         const isLoginScreen = activeScreen && activeScreen.id === 'loginScreen';
+        const isInstructionsScreen = activeScreen && activeScreen.id === 'instructionsScreen';
         const isReloginModal = document.getElementById('reloginModal') && 
                              document.getElementById('reloginModal').classList.contains('active');
-        const isInputFocused = document.activeElement.tagName === 'INPUT';
+        const isWarningModal = document.getElementById('warningModal') && 
+                             document.getElementById('warningModal').classList.contains('active');
+        const isQuestionListModal = document.getElementById('questionListModal') && 
+                                  document.getElementById('questionListModal').classList.contains('active');
+        const isSectionChangeModal = document.getElementById('sectionChangeModal') && 
+                                   document.getElementById('sectionChangeModal').classList.contains('active');
+        const isInputFocused = document.activeElement && 
+                             (document.activeElement.tagName === 'INPUT' || 
+                              document.activeElement.tagName === 'TEXTAREA' ||
+                              document.activeElement.type === 'checkbox' ||
+                              document.activeElement.type === 'radio');
+        const isAnyModalOpen = isReloginModal || isWarningModal || isQuestionListModal || isSectionChangeModal;
         
-        // Enhanced cheat detection for laptops during test
-        if (shouldTriggerCheatDetection() && !isLoginScreen && !isReloginModal && !isInputFocused) {
-            handleCheatViolation('Keyboard usage detected during test');
-            return;
+        // Allow keyboard on login, instructions, and when any modal is open or input is focused
+        const shouldAllowKeyboard = isLoginScreen || isInstructionsScreen || isAnyModalOpen || isInputFocused;
+        
+        // Enhanced cheat detection for laptops during test ONLY
+        if (shouldTriggerCheatDetection() && !shouldAllowKeyboard) {
+            // Allow certain navigation keys during test for accessibility
+            const allowedKeys = ['Tab', 'Shift', 'Alt', 'Control', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock'];
+            if (!allowedKeys.includes(e.key)) {
+                handleCheatViolation('Keyboard usage detected during test');
+                return;
+            }
         }
         
-        // Legacy security for non-laptop devices
-        if (!isLoginScreen && !isReloginModal && !isInputFocused && !testState.isTestCompleted && !testState.isTestLocked) {
-            handleSecurityViolation('Keyboard usage detected');
+        // Legacy security for non-laptop devices - be more lenient
+        if (!testState.isLaptop && !shouldAllowKeyboard && !testState.isTestCompleted && !testState.isTestLocked) {
+            // Only trigger for obvious cheating attempts on mobile devices
+            const suspiciousKeys = ['F12', 'F5']; // Only block obviously suspicious keys on mobile
+            if (suspiciousKeys.includes(e.key) || 
+                (e.ctrlKey && ['c', 'v', 'x', 'a', 'u'].includes(e.key.toLowerCase()))) {
+                handleSecurityViolation('Restricted key combination used');
+            }
         }
     });
     
-    // Monitor window focus/blur
+    // Monitor window focus/blur - but be more intelligent about it
     window.addEventListener('blur', function() {
-        if (!testState.isTestCompleted && !testState.isTestLocked) {
-            handleSecurityViolation('Window lost focus');
+        // Only trigger if we're actually in a test (not on login or instructions)
+        const activeScreen = document.querySelector('.screen.active');
+        const isActuallyInTest = activeScreen && activeScreen.id === 'testScreen';
+        
+        // Don't trigger on mobile devices at all - too many false positives
+        if (!testState.isLaptop) {
+            return;
+        }
+        
+        // Only trigger for laptops when actually in test and not completed/locked
+        if (isActuallyInTest && !testState.isTestCompleted && !testState.isTestLocked && testState.testStarted) {
+            // Check if user was recently active (within last 5 seconds) - if so, likely legitimate
+            const timeSinceActivity = Date.now() - testState.lastUserActivity;
+            const wasRecentlyActive = timeSinceActivity < 5000; // 5 seconds
+            
+            // If user was recently active, they might be legitimately interacting with browser
+            if (wasRecentlyActive) {
+                console.log('Window blur ignored - user was recently active (', timeSinceActivity, 'ms ago)');
+                return;
+            }
+            
+            // Add a small delay to avoid false triggers from quick focus changes
+            setTimeout(() => {
+                // Double-check that we're still blurred and in test
+                const stillBlurred = !document.hasFocus();
+                const stillInTest = document.querySelector('.screen.active')?.id === 'testScreen';
+                const timeSinceBlur = Date.now() - testState.lastUserActivity;
+                
+                // Only trigger if window is still blurred, still in test, and user hasn't been active
+                if (stillBlurred && stillInTest && !testState.isTestCompleted && !testState.isTestLocked && timeSinceBlur > 3000) {
+                    handleSecurityViolation('Window lost focus during test');
+                } else {
+                    console.log('Window blur violation cancelled - conditions changed');
+                }
+            }, 2000); // 2 second delay to avoid false positives
         }
     });
 }
 
-// Check if cheat detection should be triggered (laptop + test started)
+// Check if cheat detection should be triggered (laptop + test started + actually in test screen)
 function shouldTriggerCheatDetection() {
+    const activeScreen = document.querySelector('.screen.active');
+    const isInTestScreen = activeScreen && activeScreen.id === 'testScreen';
+    
     return testState.isLaptop && 
            testState.testStarted && 
+           isInTestScreen &&
            !testState.isTestCompleted && 
            !testState.isTestLocked;
 }
 
 // Enhanced cheat detection handler for laptops during test
 function handleCheatViolation(reason) {
+    // Don't trigger if user is actively interacting with the test legitimately
+    const isClickingOption = document.activeElement && 
+                            (document.activeElement.type === 'radio' || 
+                             document.activeElement.classList.contains('option') ||
+                             document.activeElement.closest('.option'));
+    
+    const isClickingButton = document.activeElement && 
+                            (document.activeElement.tagName === 'BUTTON' ||
+                             document.activeElement.classList.contains('btn-primary') ||
+                             document.activeElement.classList.contains('btn-secondary'));
+    
+    // Don't trigger violations during legitimate interactions
+    if (isClickingOption || isClickingButton) {
+        console.log('Violation suppressed - user is interacting with test interface');
+        return;
+    }
+    
     testState.violationCount++;
     console.log(`Cheat violation detected: ${reason}. Count: ${testState.violationCount}/${testState.maxViolations + 1}`);
     
@@ -624,6 +734,23 @@ function handleCheatViolation(reason) {
 
 // Legacy security violation handler for other cases
 function handleSecurityViolation(reason) {
+    // Similar safeguards for legacy handler
+    const isClickingOption = document.activeElement && 
+                            (document.activeElement.type === 'radio' || 
+                             document.activeElement.classList.contains('option') ||
+                             document.activeElement.closest('.option'));
+    
+    const isClickingButton = document.activeElement && 
+                            (document.activeElement.tagName === 'BUTTON' ||
+                             document.activeElement.classList.contains('btn-primary') ||
+                             document.activeElement.classList.contains('btn-secondary'));
+    
+    // Don't trigger violations during legitimate interactions
+    if (isClickingOption || isClickingButton) {
+        console.log('Legacy violation suppressed - user is interacting with test interface');
+        return;
+    }
+    
     testState.violationCount++;
     
     if (testState.violationCount >= 3) {
@@ -668,11 +795,6 @@ function continueTest() {
     
     if (!reloginId || !reloginPassword) {
         alert('Please enter both Login ID and Password to continue');
-        return;
-    }
-    
-    if (reloginId !== testState.loginId) {
-        alert('Login ID does not match. Please enter the correct Login ID.');
         return;
     }
     
@@ -745,24 +867,65 @@ function hideModal(modalId) {
     document.getElementById(modalId).classList.remove('active');
 }
 
-// Prevent copy-paste and other shortcuts
+// Prevent copy-paste and other shortcuts - make this smarter
 document.addEventListener('keydown', function(e) {
-    // Disable Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A, F12, etc.
-    if ((e.ctrlKey && (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')) || 
-        e.key === 'F12' || 
-        (e.ctrlKey && e.shiftKey && e.key === 'I') ||
-        (e.ctrlKey && e.shiftKey && e.key === 'J') ||
-        (e.ctrlKey && e.key === 'u')) {
+    // Get current screen and state
+    const activeScreen = document.querySelector('.screen.active');
+    const isInTestScreen = activeScreen && activeScreen.id === 'testScreen';
+    const isInputFocused = document.activeElement && 
+                         (document.activeElement.tagName === 'INPUT' || 
+                          document.activeElement.tagName === 'TEXTAREA');
+    
+    // Don't block shortcuts if user is in input fields
+    if (isInputFocused) {
+        return;
+    }
+    
+    // Disable dangerous shortcuts only when in test and when it makes sense
+    const isDangerousShortcut = (e.ctrlKey && (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')) || 
+                               e.key === 'F12' || 
+                               (e.ctrlKey && e.shiftKey && e.key === 'I') ||
+                               (e.ctrlKey && e.shiftKey && e.key === 'J') ||
+                               (e.ctrlKey && e.key === 'u');
+    
+    if (isDangerousShortcut) {
         e.preventDefault();
-        if (!testState.isTestCompleted && !testState.isTestLocked) {
-            handleSecurityViolation('Restricted key combination used');
+        
+        // Only trigger security violation if we're actually in test and on appropriate device
+        if (isInTestScreen && !testState.isTestCompleted && !testState.isTestLocked) {
+            // For laptops, use enhanced cheat detection
+            if (testState.isLaptop && testState.testStarted) {
+                handleCheatViolation('Restricted key combination used');
+            } 
+            // For other devices, use legacy but be more lenient
+            else if (!testState.isLaptop) {
+                // Only trigger on obviously suspicious shortcuts
+                if (e.key === 'F12' || (e.ctrlKey && e.key === 'u')) {
+                    handleSecurityViolation('Restricted key combination used');
+                }
+            }
         }
     }
 });
 
-// Prevent text selection except in input fields
+// Prevent text selection except in input fields - be more permissive on mobile
 document.addEventListener('selectstart', function(e) {
-    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+    // Allow text selection on mobile devices for better UX
+    if (!testState.isLaptop) {
+        return;
+    }
+    
+    // On laptops, still prevent selection except in input fields and during login
+    const activeScreen = document.querySelector('.screen.active');
+    const isLoginOrInstructions = activeScreen && 
+                                (activeScreen.id === 'loginScreen' || 
+                                 activeScreen.id === 'instructionsScreen' ||
+                                 activeScreen.id === 'summaryScreen');
+    
+    if (e.target.tagName !== 'INPUT' && 
+        e.target.tagName !== 'TEXTAREA' && 
+        !isLoginOrInstructions &&
+        testState.testStarted) {
         e.preventDefault();
     }
 }); 
