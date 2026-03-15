@@ -29,13 +29,19 @@
                     <input type="password" id="password" placeholder="Enter your Password">
                 </div>
                 <button onclick="proceedToInstructions()" class="btn-primary">Login</button>
-                <div class="whatsapp-group-section">
-                    <a href="https://chat.whatsapp.com/CAQRChBONBH9s1JQZuzRjm?mode=r_t" target="_blank" class="whatsapp-group-btn">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <div class="homepage-actions">
+                    <a href="https://chat.whatsapp.com/CAQRChBONBH9s1JQZuzRjm?mode=r_t" target="_blank" class="homepage-action-btn whatsapp-action-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.890-5.335 11.893-11.893A11.821 11.821 0 0020.465 3.488"/>
                         </svg>
-                        Join Entry Test Group
+                        Entry Test Group
                     </a>
+                    <button onclick="showAboutModal()" class="homepage-action-btn about-action-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                        </svg>
+                        About
+                    </button>
                 </div>
             </div>
             <div class="developer-credit">
@@ -413,6 +419,42 @@
             <h2>Test Locked</h2>
             <p>You have exceeded the maximum number of violations allowed during the test.</p>
             <button onclick="restartTest()" class="btn-primary">Restart Test</button>
+        </div>
+    </div>
+
+    <!-- About Modal -->
+    <div id="aboutModal" class="modal">
+        <div class="modal-content about-modal-content">
+            <div class="modal-header">
+                <h3>About This Mock Test</h3>
+                <span class="close" onclick="hideModal('aboutModal')">&times;</span>
+            </div>
+            <div class="modal-body about-modal-body">
+                <div class="about-section">
+                    <h4>What is this?</h4>
+                    <p>This is a <strong>demo mock test</strong> designed to simulate the FAST University (NUCES) entry test experience. The goal is not to help you practice MCQs — it's to make you familiar with the <strong>actual UI and user experience</strong> of the testing software used on exam day.</p>
+                </div>
+
+                <div class="about-section">
+                    <h4>Why was this made?</h4>
+                    <p>When I was giving my FAST entry test, I unintentionally locked my test multiple times. It was a huge hassle — I was on the verge of getting my test permanently locked and failing the exam, not because I didn't know the answers, but because I wasn't familiar with how the software worked.</p>
+                    <p>That experience motivated me to build this. I don't want anyone else to be left behind just because they weren't prepared for the software. With this mock test, you can get the exam pressure and vibe beforehand, understand how the interface works, and walk into the real test with confidence — so the software is no longer a hassle.</p>
+                </div>
+
+                <div class="about-section">
+                    <h4>Important Notes</h4>
+                    <ul>
+                        <li>This is <strong>just for the experience</strong> of the test environment and UI — not for MCQ practice.</li>
+                        <li>The majority of the questions are from past papers, but they are <strong>much easier</strong> than what actually comes in the exam.</li>
+                        <li>I intend to incorporate a huge question bank into this when I get time, but for now, focus on getting comfortable with the interface.</li>
+                    </ul>
+                </div>
+
+                <div class="about-section about-footer-note">
+                    <p>Made for the FASTians, by a FASTian.</p>
+                    <p><strong>— Azan</strong></p>
+                </div>
+            </div>
         </div>
     </div>
 

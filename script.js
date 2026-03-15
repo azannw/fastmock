@@ -859,6 +859,10 @@ function showScreen(screenId) {
     document.getElementById(screenId).classList.add('active');
 }
 
+function showAboutModal() {
+    showModal('aboutModal');
+}
+
 function showModal(modalId) {
     document.getElementById(modalId).classList.add('active');
 }
